@@ -12,6 +12,9 @@ from utils.common.utils import save_reconstructions, ssim_loss
 from utils.common.loss_function import SSIMLoss
 from utils.model.varnet import VarNet
 
+# MRAugment-specific imports
+from mraugment.data_augment import DataAugmentor
+
 import os
 
 def train_epoch(args, epoch, model, data_loader, optimizer, loss_type):
@@ -107,15 +110,19 @@ def train(args):
 
     best_val_loss = 1.
     start_epoch = 0
-
     
-    train_loader = create_data_loaders(data_path = args.data_path_train, args = args, shuffle=True)
-    val_loader = create_data_loaders(data_path = args.data_path_val, args = args)
+    current_epoch = 0
+    current_epoch_fn = lambda: current_epoch
+
+    augmentor = DataAugmentor(args, current_epoch_fn)
+    
+    train_loader = create_data_loaders(data_path = args.data_path_train, args = args, shuffle=True, augmentor=augmentor)
+    val_loader = create_data_loaders(data_path = args.data_path_val, args = args, augmentor=augmentor)
     
     val_loss_log = np.empty((0, 2))
     for epoch in range(start_epoch, args.num_epochs):
         print(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
-        
+          
         train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, loss_type)
         val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
         
@@ -138,7 +145,9 @@ def train(args):
             f'Epoch = [{epoch:4d}/{args.num_epochs:4d}] TrainLoss = {train_loss:.4g} '
             f'ValLoss = {val_loss:.4g} TrainTime = {train_time:.4f}s ValTime = {val_time:.4f}s',
         )
-
+        
+        current_epoch += 1
+        
         if is_new_best:
             print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@NewRecord@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
             start = time.perf_counter()
@@ -147,4 +156,3 @@ def train(args):
                 f'ForwardTime = {time.perf_counter() - start:.4f}s',
             )
 
-#2025/07/06/03:37 : original code대신에 ㅇ

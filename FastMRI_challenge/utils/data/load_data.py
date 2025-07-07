@@ -1,6 +1,7 @@
 import h5py
 import random
 from utils.data.transforms import DataTransform
+from utils.data.transforms import DataTransform_aug
 from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 import numpy as np
@@ -64,21 +65,26 @@ class SliceData(Dataset):
         return self.transform(mask, input, target, attrs, kspace_fname.name, dataslice)
 
 
-def create_data_loaders(data_path, args, shuffle=False, isforward=False):
+def create_data_loaders(data_path, args, shuffle=False, isforward=False, augmentor = None):
     if isforward == False:
         max_key_ = args.max_key
         target_key_ = args.target_key
     else:
         max_key_ = -1
         target_key_ = -1
+
+
     data_storage = SliceData(
         root=data_path,
-        transform=DataTransform(isforward, max_key_),
+        transform=DataTransform_aug(isforward, max_key_, augmentor=augmentor),
         input_key=args.input_key,
         target_key=target_key_,
         forward = isforward
     )
 
+    if augmentor is not None:
+        print(f"augmentor is well defined!")
+        
     data_loader = DataLoader(
         dataset=data_storage,
         batch_size=args.batch_size,

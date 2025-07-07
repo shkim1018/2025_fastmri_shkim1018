@@ -28,3 +28,32 @@ class DataTransform:
         kspace = torch.stack((kspace.real, kspace.imag), dim=-1)
         mask = torch.from_numpy(mask.reshape(1, 1, kspace.shape[-2], 1).astype(np.float32)).byte()
         return mask, kspace, target, maximum, fname, slice
+
+class DataTransform_aug:
+    def __init__(self, isforward, max_key, augmentor = None):
+        self.isforward = isforward
+        self.max_key = max_key
+        if augmentor is not None:
+            self.use_augment = True
+            self.augmentor = augmentor
+        else :
+            self.use_augment = False
+            
+    def __call__(self, mask, input, target, attrs, fname, slice):
+        if not self.isforward:
+            target = to_tensor(target)
+            maximum = attrs[self.max_key]
+        else:
+            target = -1
+            maximum = -1
+        
+        kspace = to_tensor(input * mask)
+
+        # Apply augmentations if needed
+        if self.use_augment: 
+            if self.augmentor.schedule_p() > 0.0:                
+                kspace, target = self.augmentor(kspace, target.shape)
+                
+        kspace = torch.stack((kspace.real, kspace.imag), dim=-1)
+        mask = torch.from_numpy(mask.reshape(1, 1, kspace.shape[-2], 1).astype(np.float32)).byte()
+        return mask, kspace, target, maximum, fname, slice
