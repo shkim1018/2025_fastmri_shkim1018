@@ -29,6 +29,8 @@ class SSIMLoss(nn.Module):
         self.cov_norm = NP / (NP - 1)
 
     def forward(self, X, Y, data_range):
+        # print("X:",X.shape)
+        # print("Y:",Y.shape)
         X = X.unsqueeze(1)
         Y = Y.unsqueeze(1)
         data_range = data_range[:, None, None, None]

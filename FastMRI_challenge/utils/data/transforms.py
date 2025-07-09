@@ -34,8 +34,8 @@ class DataTransform_aug:
         self.isforward = isforward
         self.max_key = max_key
         if augmentor is not None:
-            self.use_augment = True
             self.augmentor = augmentor
+            self.use_augment = augmentor.aug_on
         else :
             self.use_augment = False
             
@@ -46,14 +46,37 @@ class DataTransform_aug:
         else:
             target = -1
             maximum = -1
+
+        # print(f'input: {input.shape}')
+        # print(f'target: {target.shape}')
+        # # print(f'mask: {mask.shape}')
         
         kspace = to_tensor(input * mask)
+        kspace = torch.stack((kspace.real, kspace.imag), dim=-1)
 
+        # print(f'kspace: {kspace.shape}')
+        
+        # set_mask_dim = kspace.shape[-2]
+        
+        # print(f"augmetor_schedule :, {self.augmentor.schedule_p()}")
         # Apply augmentations if needed
         if self.use_augment: 
-            if self.augmentor.schedule_p() > 0.0:                
-                kspace, target = self.augmentor(kspace, target.shape)
-                
-        kspace = torch.stack((kspace.real, kspace.imag), dim=-1)
+            if self.augmentor.schedule_p() > 0.0:             
+                # kspace, target = self.augmentor(kspace, target.shape)
+                kspace, target = self.augmentor(kspace, target, target.shape)
+
+        # print(f'aug_kspace: {kspace.shape}')
+        # print(f'aug_target: {target.shape}')
+        # print(mask.shape)
+        
+        # #if shape is not augmented:
+        # if set_mask_dim == kspace.shape[-2]:
+        #     mask = torch.from_numpy(mask.reshape(1, 1, set_mask_dim, 1).astype(np.float32)).byte()
+        # #if shape is reversed:
+        # else:
+        #     mask = torch.from_numpy(mask.reshape(1, set_mask_dim, 1, 1).astype(np.float32)).byte()
+
         mask = torch.from_numpy(mask.reshape(1, 1, kspace.shape[-2], 1).astype(np.float32)).byte()
+            
+
         return mask, kspace, target, maximum, fname, slice

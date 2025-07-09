@@ -11,13 +11,15 @@ from utils.data.load_data import create_data_loaders
 from utils.common.utils import save_reconstructions, ssim_loss
 from utils.common.loss_function import SSIMLoss
 from utils.model.varnet import VarNet
+from torch.optim.lr_scheduler import LambdaLR
+from utils.learning.scheduler import warmup_decay_scheduler
 
 # MRAugment-specific imports
 from mraugment.data_augment import DataAugmentor
 
 import os
 
-def train_epoch(args, epoch, model, data_loader, optimizer, loss_type):
+def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type):
     model.train()
     start_epoch = start_iter = time.perf_counter()
     len_loader = len(data_loader)
@@ -29,13 +31,19 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type):
         kspace = kspace.cuda(non_blocking=True)
         target = target.cuda(non_blocking=True)
         maximum = maximum.cuda(non_blocking=True)
+        # print("")
 
+            
         output = model(kspace, mask)
         loss = loss_type(output, target, maximum)
-        optimizer.zero_grad()
+        loss = loss / args.gradient_accumulation_steps
         loss.backward()
-        optimizer.step()
         total_loss += loss.item()
+        
+        if (iter + 1) % args.gradient_accumulation_steps == 0:
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad()
 
         if iter % args.report_interval == 0:
             print(
@@ -105,25 +113,30 @@ def train(args):
                    sens_chans=args.sens_chans)
     model.to(device=device)
 
-    loss_type = SSIMLoss().to(device=device)
-    optimizer = torch.optim.Adam(model.parameters(), args.lr)
-
     best_val_loss = 1.
     start_epoch = 0
-    
     current_epoch = 0
     current_epoch_fn = lambda: current_epoch
-
     augmentor = DataAugmentor(args, current_epoch_fn)
     
     train_loader = create_data_loaders(data_path = args.data_path_train, args = args, shuffle=True, augmentor=augmentor)
     val_loader = create_data_loaders(data_path = args.data_path_val, args = args, augmentor=augmentor)
-    
+
+    len_loader = len(train_loader)
+
+    num_training_steps = args.num_epochs * (len_loader // args.gradient_accumulation_steps )
+    num_warmup_steps = num_training_steps // 10
+
+    loss_type = SSIMLoss().to(device=device)
+    optimizer = torch.optim.AdamW(model.parameters(), args.lr, args.weight_decay)
+
+    shceduler = warmup_decay_scheduler(num_warmup_steps, num_training_steps, optimizer, decay='cosine')
+
     val_loss_log = np.empty((0, 2))
     for epoch in range(start_epoch, args.num_epochs):
         print(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
           
-        train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, loss_type)
+        train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, scheduler, loss_type)
         val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
         
         val_loss_log = np.append(val_loss_log, np.array([[epoch, val_loss]]), axis=0)
