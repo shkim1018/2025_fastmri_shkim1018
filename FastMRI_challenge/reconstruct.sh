@@ -1,4 +1,5 @@
 python reconstruct.py \
   -b 1 \
-  -n 'Varnet_0709_0139' \
+  -e-n 60 \
+  -n 'Varnet_0716_1831' \
   -p '/root/Data/leaderboard'

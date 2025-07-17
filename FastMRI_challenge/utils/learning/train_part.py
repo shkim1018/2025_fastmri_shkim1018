@@ -18,6 +18,7 @@ from utils.learning.scheduler import warmup_decay_scheduler
 from mraugment.data_augment import DataAugmentor
 
 import os
+import wandb
 
 def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type):
     model.train()
@@ -87,23 +88,45 @@ def validate(args, model, data_loader):
     return metric_loss, num_subjects, reconstructions, targets, None, time.perf_counter() - start
 
 
-def save_model(args, exp_dir, epoch, model, optimizer, best_val_loss, is_new_best):
-    torch.save(
-        {
-            'epoch': epoch,
-            'args': args,
-            'model': model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'best_val_loss': best_val_loss,
-            'exp_dir': exp_dir
-        },
-        f=exp_dir / 'model.pt'
-    )
+def save_model(args, exp_dir, epoch, model, optimizer, val_loss, best_val_loss, is_new_best):
+    if epoch % 5 == 0:
+        tmp_dir = exp_dir / Path(str(epoch)) / 'model.pt'
+        tmp_dir.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                'epoch': epoch,
+                'args': args,
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'val_loss': val_loss,
+                'best_val_loss': best_val_loss,
+                'exp_dir': exp_dir
+            },
+            f = tmp_dir
+        )
+        wandb.save(tmp_dir)
     if is_new_best:
-        shutil.copyfile(exp_dir / 'model.pt', exp_dir / 'best_model.pt')
+        best_dir = exp_dir / 'best_model.pt'
+        best_dir.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                'epoch': epoch,
+                'args': args,
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'val_loss': val_loss,
+                'best_val_loss': best_val_loss,
+                'exp_dir': exp_dir
+            },
+            f = best_dir
+        )
+        wandb.save(best_dir)
+    # if is_new_best:
+    #     shutil.copyfile(exp_dir / str(epoch) / 'model.pt', exp_dir / 'best_model.pt')
 
         
 def train(args):
+    wandb.login()
     device = torch.device(f'cuda:{args.GPU_NUM}' if torch.cuda.is_available() else 'cpu')
     torch.cuda.set_device(device)
     print('Current cuda device: ', torch.cuda.current_device())
@@ -113,8 +136,28 @@ def train(args):
                    sens_chans=args.sens_chans)
     model.to(device=device)
 
-    best_val_loss = 1.
-    start_epoch = 0
+
+    if args.resume_training == 0: # not doing resume_training
+        best_val_loss = 1.
+        start_epoch = 0
+        
+    elif args.resume_training == -1: # choose best model
+        checkpoint = torch.load(args.resume_exp_dir / 'best_model.pt', map_location=device, weights_only=False)
+        
+        print(checkpoint['epoch'], checkpoint['best_val_loss'].item())
+        model.load_state_dict(checkpoint['model'])
+        best_val_loss = checkpoint['best_val_loss']
+        start_epoch = checkpoint['epoch']
+        
+    else: # choose certain model with epoch==args.resume_training
+        checkpoint = torch.load(args.resume_exp_dir / str(args.resume_training) / 'model.pt', map_location=device, weights_only=False)
+        
+        print(checkpoint['epoch'], checkpoint['best_val_loss'].item())
+        model.load_state_dict(checkpoint['model'])
+        best_val_loss = checkpoint['best_val_loss']
+        start_epoch = checkpoint['epoch']
+
+        
     current_epoch = 0
     current_epoch_fn = lambda: current_epoch
     augmentor = DataAugmentor(args, current_epoch_fn)
@@ -128,18 +171,38 @@ def train(args):
     num_warmup_steps = num_training_steps // 10
 
     loss_type = SSIMLoss().to(device=device)
-    optimizer = torch.optim.AdamW(model.parameters(), args.lr, args.weight_decay)
+    optimizer = torch.optim.AdamW(model.parameters(), args.lr, weight_decay = args.weight_decay)
 
-    shceduler = warmup_decay_scheduler(num_warmup_steps, num_training_steps, optimizer, decay='cosine')
+    if args.scheduler == 'warmupcos':
+        scheduler = warmup_decay_scheduler(num_warmup_steps, num_training_steps, optimizer, decay='cosine')
+    elif args.scheduler == : 'no'
+        scheduler = None
 
     val_loss_log = np.empty((0, 2))
-    for epoch in range(start_epoch, args.num_epochs):
-        print(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
+
+
+
+
+wandb.init(
+    project="2025fastmri",  # 원하는 프로젝트 이름
+    name=args.net_name,      # 실험 이름 (선택 사항)
+    config={
+        "start_epochs" : start_epoch
+        "epochs": args.num_epochs,
+        "batch_size": 1,
+        "lr": 0.001,
+        "model": args.net_name
+    }
+)
+
+#training start
+    for epoch in range(0, args.num_epochs):
+        print(f'Epoch #{start_epoch+epoch+1:2d} ............... {args.net_name} ...............')
           
         train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, scheduler, loss_type)
         val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
         
-        val_loss_log = np.append(val_loss_log, np.array([[epoch, val_loss]]), axis=0)
+        val_loss_log = np.append(val_loss_log, np.array([[start_epoch+epoch, val_loss]]), axis=0)
         file_path = os.path.join(args.val_loss_dir, "val_loss_log")
         np.save(file_path, val_loss_log)
         print(f"loss file saved! {file_path}")
@@ -153,12 +216,19 @@ def train(args):
         is_new_best = val_loss < best_val_loss
         best_val_loss = min(best_val_loss, val_loss)
 
-        save_model(args, args.exp_dir, epoch + 1, model, optimizer, best_val_loss, is_new_best)
+        save_model(args, args.exp_dir, start_epoch + epoch + 1, model, optimizer, val_loss, best_val_loss, is_new_best)
         print(
-            f'Epoch = [{epoch:4d}/{args.num_epochs:4d}] TrainLoss = {train_loss:.4g} '
+            f'Epoch = [{start_epoch + epoch+1:4d}/{start_epoch + args.num_epochs:4d}] TrainLoss = {train_loss:.4g} '
             f'ValLoss = {val_loss:.4g} TrainTime = {train_time:.4f}s ValTime = {val_time:.4f}s',
         )
-        
+
+        #save to wandb
+        wandb.log({
+    "train_loss": train_loss,
+    "lr": optimizer.param_groups[0]["lr"]
+    # "grad_norm": model.layer1.weight.grad.norm().item()
+})
+
         current_epoch += 1
         
         if is_new_best:

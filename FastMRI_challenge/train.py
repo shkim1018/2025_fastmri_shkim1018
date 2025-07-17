@@ -25,8 +25,11 @@ def parse():
     parser.add_argument('-w', '--weight-decay', type=float, default=1e-2, help='weight-decay')
     parser.add_argument('-r', '--report-interval', type=int, default=500, help='Report interval')
     parser.add_argument('-g-a', '--gradient-accumulation-steps', type=int, default=1, help='gradient accumulation step')
-    
+    parser.add_argument('-sch', '--scheduler', type=str, default="no", help='decide which scheduler we will use. no : not use, warmupcos : warmup & cosine.')
     parser.add_argument('-n', '--net-name', type=Path, default='test_varnet', help='Name of network')
+    parser.add_argument('-r-t', '--resume-training', type=int, default=0, help='decide which resume training. 0 : not doing. -1 : best model, n : n-epoch model')
+    parser.add_argument('-r-n', '--resume-net-name', type=Path, default=None, help='Name of network where the best model was saved')
+    
     parser.add_argument('-t', '--data-path-train', type=Path, default='/Data/train/', help='Directory of train data')
     parser.add_argument('-v', '--data-path-val', type=Path, default='/Data/val/', help='Directory of validation data')
     
@@ -52,6 +55,7 @@ if __name__ == '__main__':
 
     
     args.exp_dir = '../result' / args.net_name / 'checkpoints'
+    args.resume_exp_dir = '../result' / args.resume_net_name / 'checkpoints'
     args.val_dir = '../result' / args.net_name / 'reconstructions_val'
     args.main_dir = '../result' / args.net_name / __file__
     args.val_loss_dir = '../result' / args.net_name
