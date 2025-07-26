@@ -54,6 +54,7 @@ class SliceData(Dataset):
         with h5py.File(kspace_fname, "r") as hf:
             input = hf[self.input_key][dataslice]
             mask =  np.array(hf["mask"])
+            # mask =  torch.tensor(hf["mask"])
         if self.forward:
             target = -1
             attrs = -1
@@ -65,7 +66,7 @@ class SliceData(Dataset):
         return self.transform(mask, input, target, attrs, kspace_fname.name, dataslice)
 
 
-def create_data_loaders(data_path, args, shuffle=False, isforward=False, augmentor = None):
+def create_data_loaders(data_path, args, shuffle=False, isforward=False, augmentor = None, mask_augmentor = None):
     if isforward == False:
         max_key_ = args.max_key
         target_key_ = args.target_key
@@ -76,7 +77,7 @@ def create_data_loaders(data_path, args, shuffle=False, isforward=False, augment
 
     data_storage = SliceData(
         root=data_path,
-        transform=DataTransform_aug(isforward, max_key_, augmentor=augmentor),
+        transform=DataTransform_aug(isforward, max_key_, augmentor=augmentor, mask_augmentor=mask_augmentor),
         input_key=args.input_key,
         target_key=target_key_,
         forward = isforward
@@ -84,6 +85,9 @@ def create_data_loaders(data_path, args, shuffle=False, isforward=False, augment
 
     if augmentor is not None:
         print(f"augmentor is well defined!")
+
+    if mask_augmentor is not None:
+        print(f"mask augmentor is well defined!")
         
     data_loader = DataLoader(
         dataset=data_storage,

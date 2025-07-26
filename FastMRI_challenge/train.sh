@@ -1,13 +1,26 @@
 python -u train.py \
   -b 1 \
-  -e 20 \
-  -l 8e-6 \
+  -e 10 \
+  -l 3e-4 \
   -w 1e-6 \
-  -r 500 \
-  -g-a 1 \
-  -sch 'warmupcos' \
-  -n 'Varnet_0717_1127' \
-  -r-t 60 \
-  -r-n 'Varnet_0716_1831' \
+  -r 100 \
+  -g-a 2 \
+  -sch 'cosannealing' \
+  -n 'Varnet_0727_00_16' \
+  -r-t 0 \
+  -r-n None \
   -t '/root/Data/train/' \
-  -v '/root/Data/val/'
+  -v '/root/Data/val/' \
+  --cascade 6 \
+  --chans 4 \
+  --sens_chans 4 \
+  --sens_pools 3 \
+  --aug_schedule 'exp' \
+  --aug_delay 0 \
+  --aug_strength 0.5 \
+  --aug_exp_decay 3.0 \
+  --mask_aug_on \
+  --mask_aug_schedule 'exp' \
+  --mask_aug_delay 0 \
+  --mask_aug_strength 0.5 \
+  --mask_aug_exp_decay 3.0 \

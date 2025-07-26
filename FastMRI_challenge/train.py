@@ -14,6 +14,7 @@ from utils.common.utils import seed_fix
 
 # MRAugment-specific imports
 from mraugment.data_augment import DataAugmentor
+from mraugment.mask_augment import MaskAugmentor
 
 def parse():
     parser = argparse.ArgumentParser(description='Train Varnet on FastMRI challenge Images',
@@ -25,7 +26,7 @@ def parse():
     parser.add_argument('-w', '--weight-decay', type=float, default=1e-2, help='weight-decay')
     parser.add_argument('-r', '--report-interval', type=int, default=500, help='Report interval')
     parser.add_argument('-g-a', '--gradient-accumulation-steps', type=int, default=1, help='gradient accumulation step')
-    parser.add_argument('-sch', '--scheduler', type=str, default="no", help='decide which scheduler we will use. no : not use, warmupcos : warmup & cosine.')
+    parser.add_argument('-sch', '--scheduler', type=str, default="no", help='decide which scheduler we will use. no : not use, warmupcos : warmup & cosine, cosannealing: cosineannealingWarmup')
     parser.add_argument('-n', '--net-name', type=Path, default='test_varnet', help='Name of network')
     parser.add_argument('-r-t', '--resume-training', type=int, default=0, help='decide which resume training. 0 : not doing. -1 : best model, n : n-epoch model')
     parser.add_argument('-r-n', '--resume-net-name', type=Path, default=None, help='Name of network where the best model was saved')
@@ -36,6 +37,7 @@ def parse():
     parser.add_argument('--cascade', type=int, default=1, help='Number of cascades | Should be less than 12') ## important hyperparameter
     parser.add_argument('--chans', type=int, default=9, help='Number of channels for cascade U-Net | 18 in original varnet') ## important hyperparameter
     parser.add_argument('--sens_chans', type=int, default=4, help='Number of channels for sensitivity map U-Net | 8 in original varnet') ## important hyperparameter
+    parser.add_argument('--sens_pools', type=int, default=4, help='Number of downsampling and upsampling layers for sensitivity map U-Net') ## important hyperparameter
     parser.add_argument('--input-key', type=str, default='kspace', help='Name of input key')
     parser.add_argument('--target-key', type=str, default='image_label', help='Name of target key')
     parser.add_argument('--max-key', type=str, default='max', help='Name of max key in attributes')
@@ -43,6 +45,7 @@ def parse():
 
     # data augmentation config
     parser = DataAugmentor.add_augmentation_specific_args(parser)
+    parser = MaskAugmentor.add_augmentation_specific_args(parser)
     args = parser.parse_args()
     return args
 

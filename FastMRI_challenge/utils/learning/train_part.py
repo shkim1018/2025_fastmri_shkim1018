@@ -13,12 +13,17 @@ from utils.common.loss_function import SSIMLoss
 from utils.model.varnet import VarNet
 from torch.optim.lr_scheduler import LambdaLR
 from utils.learning.scheduler import warmup_decay_scheduler
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 
 # MRAugment-specific imports
 from mraugment.data_augment import DataAugmentor
+from mraugment.mask_augment import MaskAugmentor
 
 import os
 import wandb
+
+#for debug
+import show_image
 
 def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type):
     model.train()
@@ -43,7 +48,10 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
         
         if (iter + 1) % args.gradient_accumulation_steps == 0:
             optimizer.step()
-            scheduler.step()
+            if args.scheduler == 'cosannealing':
+                scheduler.step(epoch + iter / len_loader)
+            else:
+                scheduler.step()
             optimizer.zero_grad()
 
         if iter % args.report_interval == 0:
@@ -104,7 +112,16 @@ def save_model(args, exp_dir, epoch, model, optimizer, val_loss, best_val_loss, 
             },
             f = tmp_dir
         )
-        wandb.save(tmp_dir)
+        
+        artifact = wandb.Artifact(str(epoch), type="model")
+        artifact.add_file(str(tmp_dir))
+        artifact.metadata = {
+                'epoch': epoch,
+                'val_loss': val_loss,
+                'best_val_loss': best_val_loss,
+            }
+        wandb.log_artifact(artifact)
+        
     if is_new_best:
         best_dir = exp_dir / 'best_model.pt'
         best_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -120,7 +137,15 @@ def save_model(args, exp_dir, epoch, model, optimizer, val_loss, best_val_loss, 
             },
             f = best_dir
         )
-        wandb.save(best_dir)
+        artifact = wandb.Artifact('best_model', type="model")
+        artifact.add_file(str(best_dir))
+        artifact.metadata = {
+                'epoch': epoch,
+                'val_loss': val_loss,
+                'best_val_loss': best_val_loss,
+            }
+        wandb.log_artifact(artifact)
+
     # if is_new_best:
     #     shutil.copyfile(exp_dir / str(epoch) / 'model.pt', exp_dir / 'best_model.pt')
 
@@ -161,9 +186,12 @@ def train(args):
     current_epoch = 0
     current_epoch_fn = lambda: current_epoch
     augmentor = DataAugmentor(args, current_epoch_fn)
+
+    mask_augmentor = MaskAugmentor(args, current_epoch_fn)
     
-    train_loader = create_data_loaders(data_path = args.data_path_train, args = args, shuffle=True, augmentor=augmentor)
-    val_loader = create_data_loaders(data_path = args.data_path_val, args = args, augmentor=augmentor)
+    
+    train_loader = create_data_loaders(data_path = args.data_path_train, args = args, shuffle=True, augmentor=augmentor, mask_augmentor=mask_augmentor)
+    val_loader = create_data_loaders(data_path = args.data_path_val, args = args, augmentor=augmentor, mask_augmentor=mask_augmentor)
 
     len_loader = len(train_loader)
 
@@ -175,25 +203,29 @@ def train(args):
 
     if args.scheduler == 'warmupcos':
         scheduler = warmup_decay_scheduler(num_warmup_steps, num_training_steps, optimizer, decay='cosine')
-    elif args.scheduler == : 'no'
+    elif args.scheduler == 'no':
         scheduler = None
+    elif args.scheduler == 'cosannealing':
+        scheduler = CosineAnnealingWarmRestarts(
+    optimizer,     # 옵티마이저
+    T_0=5,        # 첫 번째 주기 길이
+    T_mult=1,      # 이후 주기 길이를 몇 배로 늘릴지
+    eta_min=1e-6   # 최소 learning rate
+)
 
     val_loss_log = np.empty((0, 2))
 
-
-
-
-wandb.init(
-    project="2025fastmri",  # 원하는 프로젝트 이름
-    name=args.net_name,      # 실험 이름 (선택 사항)
-    config={
-        "start_epochs" : start_epoch
-        "epochs": args.num_epochs,
-        "batch_size": 1,
-        "lr": 0.001,
-        "model": args.net_name
-    }
-)
+    wandb.init(
+        project="2025fastmri",  # 원하는 프로젝트 이름
+        name=str(args.net_name),      # 실험 이름 (선택 사항)
+        config={
+            "start_epochs" : start_epoch,
+            "epochs": args.num_epochs,
+            "scheduler": args.scheduler,
+            "lr": args.lr,
+            "model": args.net_name
+        }
+    )
 
 #training start
     for epoch in range(0, args.num_epochs):

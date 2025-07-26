@@ -51,9 +51,10 @@ def tensor_to_complex_np(data: torch.Tensor) -> np.ndarray:
 def apply_mask(
     data: torch.Tensor,
     mask_func: MaskFunc,
+    offset: Optional[int] = None,
     seed: Optional[Union[int, Tuple[int, ...]]] = None,
     padding: Optional[Sequence[int]] = None,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor, int]:
     """
     Subsample given k-space by multiplying with a mask.
 
@@ -68,19 +69,20 @@ def apply_mask(
 
     Returns:
         tuple containing:
-            masked data: Subsampled k-space data
-            mask: The generated mask
+            masked data: Subsampled k-space data.
+            mask: The generated mask.
+            num_low_frequencies: The number of low-resolution frequency samples
+                in the mask.
     """
-    shape = np.array(data.shape)
-    shape[:-3] = 1
-    mask = mask_func(shape, seed)
+    shape = (1,) * len(data.shape[:-3]) + tuple(data.shape[-3:])
+    mask, num_low_frequencies = mask_func(shape, offset, seed)
     if padding is not None:
-        mask[:, :, : padding[0]] = 0
-        mask[:, :, padding[1] :] = 0  # padding value inclusive on right of zeros
+        mask[..., : padding[0], :] = 0
+        mask[..., padding[1] :, :] = 0  # padding value inclusive on right of zeros
 
     masked_data = data * mask + 0.0  # the + 0.0 removes the sign of the zeros
 
-    return masked_data, mask
+    return masked_data, mask, num_low_frequencies
 
 
 def mask_center(x: torch.Tensor, mask_from: int, mask_to: int) -> torch.Tensor:
